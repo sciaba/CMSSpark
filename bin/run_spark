@@ -112,7 +112,11 @@ if [ -n "$yarn" ]; then
     if [ "$cvmfs" == "true" ]; then
         spark-submit $jars \
             --master yarn \
-            --executor-memory 5g \
+            --executor-memory 7g \
+            --executor-cores 2 \
+            --driver-memory 7g \
+            --driver-cores 4 \
+            --conf spark.sql.autoBroadcastJoinThreshold=100000000 \
             --conf spark.pyspark.python=/cvmfs/sft.cern.ch/lcg/views/LCG_93/x86_64-centos7-gcc62-opt/bin/python \
             --conf spark.driver.extraClassPath=$mapreduce \
             --conf spark.executorEnv.LD_LIBRARY_PATH=$LD_LIBRARY_PATH \

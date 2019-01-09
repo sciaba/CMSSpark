@@ -25,6 +25,7 @@ from CMSSpark.schemas import schema_jm, schema_cmssw, schema_asodb, schema_empty
 
 from pyspark import SparkContext, StorageLevel
 from pyspark.sql import Row
+from pyspark.sql import SparkSession
 from pyspark.sql import SQLContext
 from pyspark.sql import DataFrame
 from pyspark.sql.types import DoubleType, IntegerType, StructType, StructField, StringType, BooleanType, LongType
@@ -163,6 +164,17 @@ def spark_context(appname='cms', yarn=None, verbose=False, python_files=[]):
         logger.info("YARN client mode enabled")
     return ctx
 
+def spark_session(appname='cms', yarn=None, verbose=False):
+    # define spark context, it's main object which allow
+    # to communicate with spark
+    session = SparkSession.builder.appName(appname).enableHiveSupport().getOrCreate()
+    ctx = session.sparkContext
+    logger = SparkLogger(ctx)
+    if  not verbose:
+        logger.set_level('ERROR')
+    if yarn:
+        logger.info("YARN client mode enabled")
+    return session
 
 def delete_hadoop_directory(path):
     os.popen("hadoop fs -rm -r \"" + path + "\"")
@@ -200,7 +212,7 @@ def phedex_summary_tables(sqlContext, hdir='hdfs:///cms/phedex', verbose=False):
 
     # Register temporary tables to be able to use sqlContext.sql
     phedex_summary_df = unionAll(dfs)
-    phedex_summary_df.registerTempTable('phedex_summary_df')
+    phedex_summary_df.createOrReplaceTempView('phedex_summary_df')
 
     tables = {'phedex_summary_df':phedex_summary_df}
     return tables
@@ -223,7 +235,7 @@ def phedex_tables(sqlContext, hdir='hdfs:///project/awg/cms', verbose=False, fro
                     for file_path in pfiles])
 
     # Register temporary tables to be able to use sqlContext.sql
-    phedex_df.registerTempTable('phedex_df')
+    phedex_df.createOrReplaceTempView('phedex_df')
 
     tables = {'phedex_df':phedex_df}
     return tables
@@ -259,73 +271,74 @@ def dbs_tables(sqlContext, hdir='hdfs:///project/awg/cms', inst='GLOBAL', verbos
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
                             .load(path, schema = schema_dataset_access_types()) \
                             for path in files(paths['dapath'], verbose)])
-        daf.registerTempTable('daf')
+        daf.createOrReplaceTempView('daf')
         dbs_tables.update({'daf':daf})
     if not tables or 'ddf' in tables:
         ddf = unionAll([sqlContext.read.format('com.databricks.spark.csv')\
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
                             .load(path, schema = schema_datasets()) \
                             for path in files(paths['dpath'], verbose)])
-        ddf.registerTempTable('ddf')
+        ddf.createOrReplaceTempView('ddf')
         dbs_tables.update({'ddf':ddf})
     if not tables or 'bdf' in tables:
         bdf = unionAll([sqlContext.read.format('com.databricks.spark.csv')\
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
                             .load(path, schema = schema_blocks()) \
                             for path in files(paths['bpath'], verbose)])
-        bdf.registerTempTable('bdf')
+        bdf.createOrReplaceTempView('bdf')
         dbs_tables.update({'bdf':bdf})
     if not tables or 'fdf' in tables:
         fdf = unionAll([sqlContext.read.format('com.databricks.spark.csv')\
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
                             .load(path, schema = schema_files()) \
                             for path in files(paths['fpath'], verbose)])
-        fdf.registerTempTable('fdf')
+        fdf.createOrReplaceTempView('fdf')
         dbs_tables.update({'fdf':fdf})
     if not tables or 'aef' in tables:
         aef = unionAll([sqlContext.read.format('com.databricks.spark.csv')\
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
                             .load(path, schema = schema_acquisition_eras()) \
                             for path in files(paths['apath'], verbose)])
-        aef.registerTempTable('aef')
+        aef.createOrReplaceTempView('aef')
         dbs_tables.update({'aef':aef})
     if not tables or 'pef' in tables:
         pef = unionAll([sqlContext.read.format('com.databricks.spark.csv')\
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
                             .load(path, schema = schema_processing_eras()) \
                             for path in files(paths['ppath'], verbose)])
-        pef.registerTempTable('pef')
+        pef.createOrReplaceTempView('pef')
         dbs_tables.update({'pef':pef})
     if not tables or 'mcf' in tables:
         mcf = unionAll([sqlContext.read.format('com.databricks.spark.csv')\
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
                             .load(path, schema = schema_mod_configs()) \
                             for path in files(paths['mcpath'], verbose)])
-        mcf.registerTempTable('mcf')
+        mcf.createOrReplaceTempView('mcf')
         dbs_tables.update({'mcf':mcf})
     if not tables or 'ocf' in tables:
         ocf = unionAll([sqlContext.read.format('com.databricks.spark.csv')\
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
                             .load(path, schema = schema_out_configs()) \
                             for path in files(paths['ocpath'], verbose)])
-        ocf.registerTempTable('ocf')
+        ocf.createOrReplaceTempView('ocf')
         dbs_tables.update({'ocf':ocf})
     if not tables or 'rvf' in tables:
         rvf = unionAll([sqlContext.read.format('com.databricks.spark.csv')\
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
                             .load(path, schema = schema_rel_versions()) \
                             for path in files(paths['rvpath'], verbose)])
-        rvf.registerTempTable('rvf')
+        rvf.createOrReplaceTempView('rvf')
         dbs_tables.update({'rvf':rvf})
     if not tables or 'flf' in tables:
         flf = unionAll([sqlContext.read.format('com.databricks.spark.csv')\
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
                             .load(path, schema = schema_file_lumis()) \
                             for path in files(paths['flpath'], verbose)])
-        flf.registerTempTable('flf')
+        flf.createOrReplaceTempView('flf')
         dbs_tables.update({'flf':flf})
 
     return dbs_tables
+
 
 def cmssw_tables(ctx, sqlContext,
         hdir='hdfs:///project/awg/cms/cmssw-popularity/avro-snappy', date=None, verbose=None):
@@ -365,7 +378,7 @@ def cmssw_tables(ctx, sqlContext,
             .withColumn("READ_VECTOR_COUNT_AVERAGE", jdf["READ_VECTOR_COUNT_AVERAGE"].cast(DoubleType()))\
             .withColumn("READ_VECTOR_COUNT_SIGMA", jdf["READ_VECTOR_COUNT_SIGMA"].cast(DoubleType()))
     df = sqlContext.createDataFrame(rdd, schema=schema_cmssw())
-    df.registerTempTable('cmssw_df')
+    df.createOrReplaceTempView('cmssw_df')
     tables = {'cmssw_df': df}
     return tables
 
@@ -399,7 +412,7 @@ def jm_tables(ctx, sqlContext,
             .withColumn("NCores", jdf["NCores"].cast(IntegerType()))\
             .withColumn("NEvProc", jdf["NEvProc"].cast(IntegerType()))\
             .withColumn("NEvReq", jdf["NEvReq"].cast(IntegerType()))
-    df.registerTempTable('jm_df')
+    df.createOrReplaceTempView('jm_df')
     tables = {'jm_df': df}
     return tables
 
@@ -477,7 +490,7 @@ def aaa_tables(sqlContext,
 
     # create new spark DataFrame
     aaa_df = sqlContext.createDataFrame(aaa_rdd)
-    aaa_df.registerTempTable('aaa_df')
+    aaa_df.createOrReplaceTempView('aaa_df')
     tables = {'aaa_df':aaa_df}
     return tables
 
@@ -511,7 +524,7 @@ def aaa_tables_enr(sqlContext,
         except:
             aaa_df = unionAll([sqlContext.jsonFile(path) for path in files_in_hpath], cols)
 
-    aaa_df.registerTempTable('aaa_df')
+    aaa_df.createOrReplaceTempView('aaa_df')
     tables = {'aaa_df':aaa_df}
     return tables
 
@@ -542,7 +555,7 @@ def eos_tables(sqlContext,
 
     if len(files_in_hpath) == 0:
         eos_df = sqlContext.createDataFrame([], schema=schema_empty_eos())
-        eos_df.registerTempTable('eos_df')
+        eos_df.createOrReplaceTempView('eos_df')
         tables = {'eos_df':eos_df}
         return tables
     
@@ -576,7 +589,7 @@ def eos_tables(sqlContext,
 
     # create new spark DataFrame
     eos_df = sqlContext.createDataFrame(eos_rdd)
-    eos_df.registerTempTable('eos_df')
+    eos_df.createOrReplaceTempView('eos_df')
     tables = {'eos_df':eos_df}
     return tables
 
@@ -597,7 +610,7 @@ def condor_tables(sqlContext,
 
     # create new spark DataFrame
     condor_df = sqlContext.read.json(hpath)
-    condor_df.registerTempTable('condor_df')
+    condor_df.createOrReplaceTempView('condor_df')
 #    condor_df = condor_df.select(unpack_struct("data", condor_df)) # extract data part of JSON records
     condor_df.printSchema()
     tables = {'condor_df':condor_df}
@@ -625,7 +638,7 @@ def fts_tables(sqlContext,
 
     # create new spark DataFrame
     fts_df = sqlContext.read.json(hpath)
-    fts_df.registerTempTable('fts_df')
+    fts_df.createOrReplaceTempView('fts_df')
     fts_df = fts_df.select(unpack_struct("data", fts_df)) # extract data part of JSON records
     fts_df.printSchema()
     tables = {'fts_df':fts_df}
@@ -665,7 +678,7 @@ def aso_tables(sqlContext, hdir='hdfs:///project/awg/cms', verbose=False):
                     for file_path in pfiles])
 
     # Register temporary tables to be able to use sqlContext.sql
-    aso_df.registerTempTable('aso_df')
+    aso_df.createOrReplaceTempView('aso_df')
 
     tables = {'aso_df':aso_df}
     return tables

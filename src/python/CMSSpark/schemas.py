@@ -180,7 +180,7 @@ def schema_files():
             StructField("f_file_type_id", IntegerType(), True),
             StructField("f_check_sum", StringType(), True),
             StructField("f_event_count", IntegerType(), True),
-            StructField("f_file_size", DoubleType(), True),
+            StructField("f_file_size", LongType(), True),
             StructField("f_branch_hash_id", IntegerType(), True),
             StructField("f_adler32", StringType(), True),
             StructField("f_md5", StringType(), True),
@@ -338,6 +338,7 @@ def schema_cmssw():
         StructField("READ_VECTOR_SIGMA", StringType(), True),
         StructField("READ_VECTOR_COUNT_AVERAGE", StringType(), True),
         StructField("READ_VECTOR_COUNT_SIGMA", StringType(), True),
+        StructField("FALLBACK", StringType(), True),
         StructField("USER_DN", StringType(), True),
         StructField("APP_INFO", StringType(), True),
         StructField("START_TIME", StringType(), True),
@@ -346,6 +347,7 @@ def schema_cmssw():
         StructField("END_DATE", LongType(), True),
         StructField("INSERT_DATE", LongType(), True)
     ])
+
 
 def schema_jm():
     """Schema for JobMonitoring record

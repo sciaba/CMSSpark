@@ -86,7 +86,7 @@ def run(date, fout, yarn=None, verbose=None):
         # mismatch the data types, i.e. headers are string and rows
         # may be different data types
         pdf.select(cols)\
-            .write.format("com.databricks.spark.csv")\
+            .write.format("csv")\
             .option("header", "false").save(out)
 
     ctx.stop()

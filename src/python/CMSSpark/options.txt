@@ -1,0 +1,5 @@
+spark.network.timeout=300s
+--executor-cores 2
+--driver-memory 7g
+--driver-cores 4
+
