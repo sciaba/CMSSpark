@@ -20,7 +20,7 @@ from CMSSpark.schemas import schema_processing_eras, schema_dataset_access_types
 from CMSSpark.schemas import schema_acquisition_eras,  schema_datasets, schema_blocks
 from CMSSpark.schemas import schema_files, schema_mod_configs, schema_out_configs
 from CMSSpark.schemas import schema_rel_versions, schema_file_lumis, schema_phedex
-from CMSSpark.schemas import schema_phedex_summary
+from CMSSpark.schemas import schema_phedex_summary, schema_data_tiers
 from CMSSpark.schemas import schema_jm, schema_cmssw, schema_asodb, schema_empty_aaa, schema_empty_eos
 
 from pyspark import SparkContext, StorageLevel
@@ -247,6 +247,7 @@ def dbs_tables(sqlContext, hdir='hdfs:///project/awg/cms', inst='GLOBAL', verbos
     """
     dbsdir = hdir+'/CMS_DBS3_PROD_%s/current' % inst
     paths = {'dpath':apath(dbsdir, 'DATASETS'),
+             'tpath':apath(dbsdir, 'DATA_TIERS'),
              'bpath':apath(dbsdir, 'BLOCKS'),
              'fpath':apath(dbsdir, 'FILES'),
              'apath':apath(dbsdir, 'ACQUISITION_ERAS'),
@@ -280,6 +281,13 @@ def dbs_tables(sqlContext, hdir='hdfs:///project/awg/cms', inst='GLOBAL', verbos
                             for path in files(paths['dpath'], verbose)])
         ddf.createOrReplaceTempView('ddf')
         dbs_tables.update({'ddf':ddf})
+    if not tables or 'dtf' in tables:
+        dtf = unionAll([sqlContext.read.format('com.databricks.spark.csv')\
+                            .options(treatEmptyValuesAsNulls='true', nullValue='null')\
+                            .load(path, schema = schema_data_tiers()) \
+                            for path in files(paths['tpath'], verbose)])
+        dtf.registerTempTable('dtf')
+        dbs_tables.update({'dtf':dtf})
     if not tables or 'bdf' in tables:
         bdf = unionAll([sqlContext.read.format('com.databricks.spark.csv')\
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
