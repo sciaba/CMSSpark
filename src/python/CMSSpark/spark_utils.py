@@ -286,7 +286,7 @@ def dbs_tables(sqlContext, hdir='hdfs:///project/awg/cms', inst='GLOBAL', verbos
                             .options(treatEmptyValuesAsNulls='true', nullValue='null')\
                             .load(path, schema = schema_data_tiers()) \
                             for path in files(paths['tpath'], verbose)])
-        dtf.registerTempTable('dtf')
+        dtf.createOrReplaceTempView('dtf')
         dbs_tables.update({'dtf':dtf})
     if not tables or 'bdf' in tables:
         bdf = unionAll([sqlContext.read.format('com.databricks.spark.csv')\

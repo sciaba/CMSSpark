@@ -14,6 +14,8 @@ Things to calculate:
 Further on:
 - by file type
 """
+from __future__ import division
+
 
 import os
 import sys
@@ -25,7 +27,8 @@ import calendar
 import pandas as pd
 
 from pyspark.sql.window import Window
-from pyspark.sql.functions import asc, avg, count, col, expr, sum, max
+from pyspark.sql.functions import asc, avg, count, col, desc, expr, sum, max
+from pyspark.sql.types import StructType, StructField, StringType, LongType
 
 from CMSSpark.spark_utils import spark_session
 from CMSSpark.conf import OptionParser
@@ -112,10 +115,18 @@ def jm_dates(dateinput):
     return [jm_date(dateinput)]
 
 
-def run(site, date, fout, yarn=None, verbose=None):
+def run(site, date, cache_size, fout, yarn=None, verbose=None):
 
-    cache_limit = 2e14
-    clean_cache_limit = 1.6e14
+    cache_limit = int(cache_size) * 1024.   # in GB
+    clean_cache_limit = cache_limit * 0.8   # in GB
+    gc_type = 'atime'
+
+
+    tsprint("Cache limit: %d" % cache_limit)
+    tsprint("Clean vache limit: %d" % clean_cache_limit)
+
+
+    date_name = date
 
     fmt = 'csv'
 
@@ -129,6 +140,17 @@ def run(site, date, fout, yarn=None, verbose=None):
     else:
         dates = jm_dates(date)
 
+    schema = StructType([
+        StructField("Filename", StringType(), False),
+        StructField("Filesize", LongType(), False),
+        StructField("SiteName", StringType(), False),
+        StructField("AccessTime", LongType(), False),
+        StructField("DBS_Filesize", LongType(), False),
+        StructField("Dataset", StringType(), False),
+        StructField("Datatier", StringType(), False),
+        StructField("JobType", StringType(), False),
+    ])
+
     i = 0
     for date in dates:
         tsprint("Day %s"% date)
@@ -137,7 +159,8 @@ def run(site, date, fout, yarn=None, verbose=None):
         # Read file access data for the day
         tsprint("Reading file access information...")
         infile = fout + '/access_' + date
-        fjoin = spark.read.format(fmt).option("header", "true")\
+        fjoin = spark.read.format(fmt).option("header", "false")\
+                                      .schema(schema)\
                                       .load(infile)
 
         tsprint("Collecting information of files accessed...")
@@ -150,8 +173,12 @@ def run(site, date, fout, yarn=None, verbose=None):
         tsprint("Updating the cache...")
         if i == 1:
             totals = new_files_df.selectExpr("sum(nacc-1)", "count(1)").head()
-            nhits = totals[0]
-            nmisses = totals[1]
+            if totals[1] == 0:
+                nhits = 0
+                nmisses = 0
+            else:
+                nhits = totals[0]
+                nmisses = totals[1]
             tsprint("Hits and misses calculated")
             cache_df = new_files_df
             cache_df.createOrReplaceTempView("cache_df")
@@ -162,8 +189,15 @@ def run(site, date, fout, yarn=None, verbose=None):
             cached_df    = new_files_df.join(cache_df, joinExpr, 'left_semi')
             notcached_df = new_files_df.join(cache_df, joinExpr, 'left_anti')
             totals = notcached_df.selectExpr("sum(nacc-1)", "count(1)").head()
-            nhits = toScalar2(cached_df.select(sum("nacc"))) + totals[0]
-            nmisses = totals[1]
+            if totals[1] == 0:
+                nhits = toScalar2(cached_df.select(sum("nacc")))
+                if nhits is None: nhits = 0
+                nmisses = 0
+            else:
+                nhits = toScalar2(cached_df.select(sum("nacc")))
+                if nhits is None: nhits = 0
+                nhits += totals[0]
+                nmisses = totals[1]
             tsprint("Hits and misses calculated")
 
             # Now, update the cache information
@@ -175,39 +209,47 @@ def run(site, date, fout, yarn=None, verbose=None):
             tsprint("Cache updated")
 
         totals = cache_df.selectExpr("sum(size)", "count(1)").head()
-        nfc = totals[1]
-        cache_used = totals[0]
+        if totals[1] == 0:
+            nfc = 0
+            cache_used = 0.
+        else:
+            nfc = totals[1]
+            cache_used = totals[0] / 1024.**3
         tsprint("No. of hits: %d" % nhits)
         tsprint("No. of nmisses: %d" % nmisses)
         tsprint("No. of files in cache: %d" % nfc)
-        tsprint("Cache used: %f TB" % (cache_used / 1024**4))
+        tsprint("Cache used: %f TB" % (cache_used / 1024.))
 
         results = results.append({'day': i, 'hits': nhits, 'misses': nmisses, 'nfc': nfc, 'cache_used': cache_used}, ignore_index=True)
 
         if cache_used > cache_limit:
             tsprint("Garbage collection!")
-            wSpec = Window.orderBy(asc("size"))\
+            wSpec = Window.orderBy(desc("atime"))\
                 .rowsBetween(Window.unboundedPreceding, Window.currentRow)
             cumsize = sum(col("size")).over(wSpec)
             cache_df = cache_df.withColumn("cumsize", cumsize)\
-                               .where(col("cumsize") < clean_cache_limit)\
+                .where(col("cumsize") < clean_cache_limit * 1024**3)\
                                .drop("cumsize")
             cache_df.cache()
             cache_df.createOrReplaceTempView("cache_df")
             totals = cache_df.selectExpr("sum(size)", "count(1)").head()
             nfc = totals[1]
-            cache_used = totals[0]
+            cache_used = totals[0] / 1024.**3
             tsprint("No. of hits: %d" % nhits)
             tsprint("No. of nmisses: %d" % nmisses)
             tsprint("No. of files in cache: %d" % nfc)
-            tsprint("Cache used: %f TB" % (cache_used / 1024**4))
+            tsprint("Cache used: %f TB" % (cache_used / 1024.))
             results = results.append({'day': i, 'hits': nhits, 'misses': nmisses, 'nfc': nfc, 'cache_used': cache_used}, ignore_index=True)
 
 
     # Writing out the processed data
     tsprint("Writing out the results...")
 
-    outfile = 'results.csv'
+    cachefile = fout + '/cache_' + site + '_' + cache_size + '_' + date_name
+
+    cache_df.write.save(cachefile)
+
+    outfile = 'results_' + site + '_' + cache_size + '_' + date_name + '.csv'
     results.to_csv(outfile)
     tsprint("Job finished!")
 
@@ -216,9 +258,13 @@ def main():
     optmgr = OptionParser('cache_data')
     optmgr.parser.add_argument("--site", action="store",
             dest="site", default="", help='Select CMS site')
+    optmgr.parser.add_argument("--cache_size", action="store",
+            dest="cache_size", default="", help='Select cache size (in TB)')
+
     opts = optmgr.parser.parse_args()
     print("Input arguments: %s" % opts)
-    run(opts.site, opts.date, opts.fout, opts.yarn, opts.verbose)    
+    run(opts.site, opts.date, opts.cache_size, opts.fout, opts.yarn,
+        opts.verbose)    
 
 if __name__ == '__main__':
     main()

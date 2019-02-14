@@ -27,7 +27,8 @@ import pandas as pd
 from pyspark import SparkContext, StorageLevel
 from pyspark.sql import HiveContext
 from pyspark.sql.window import Window
-from pyspark.sql.types import ByteType
+from pyspark.sql.types import ByteType, StructField, StructType, LongType, \
+    StringType
 from pyspark.sql.functions import asc, avg, count, col, expr, sum, lag, lit, \
     row_number, when, max
 
@@ -128,11 +129,9 @@ def run(site, date, fout, yarn=None, verbose=None):
     else:
         dates = jm_dates(date)
 
-    tsprint("Reading DBS data from full DBS dump...")
-    tables = {}
-    tables.update(dbs_tables(sqlContext, verbose=verbose))
-    fdf = tables['fdf']
-    myfdf = fdf.select("f_logical_file_name", "f_file_size").orderBy("f_logical_file_name").cache()
+    tsprint("Reading DBS data from my DBS dump...")
+    myfdf = spark.read.load("/cms/users/asciaba/myfdf")
+    myfdf.cache()
     myfdf.createOrReplaceTempView('myfdf')
 
     i = 0
@@ -151,7 +150,7 @@ def run(site, date, fout, yarn=None, verbose=None):
         tsprint("Joining with DBS information...")
         # Join file access data with DBS file data
         cols = ['FILE_LFN', 'FILE_SIZE', 'SITE_NAME', 'APP_INFO', 'START_TIME',
-                'f_file_size']
+                'f_file_size', 'd_dataset', 'data_tier_name']
 
         # An inner join selects only accesses to files registered in DBS, which
         # leaves out e.g. files in /store/unmerged/..., which are almost always
@@ -165,20 +164,34 @@ def run(site, date, fout, yarn=None, verbose=None):
                      .withColumnRenamed('f_file_size', 'DBS_Filesize')\
                      .withColumnRenamed('START_TIME', 'AccessTime')\
                      .withColumnRenamed('SITE_NAME', 'SiteName')\
+                     .withColumnRenamed('d_dataset', 'Dataset')\
+                     .withColumnRenamed('data_tier_name', 'Datatier')\
                      .withColumn("JobType",
                         when(col("APP_INFO").contains('crab'),
                         'analysis').otherwise('production'))\
-                     .drop("APP_INFO").orderBy(col("AccessTime")).coalesce(1)
+                     .drop("APP_INFO").orderBy(col("AccessTime"))
 
         fmt = 'csv'
         if fout:
+            schema = StructType([
+                StructField("Filename", StringType(), False),
+                StructField("Filesize", LongType(), False),
+                StructField("SiteName", StringType(), False),
+                StructField("AccessTime", LongType(), False),
+                StructField("DBS_Filesize", LongType(), False),
+                StructField("Dataset", StringType(), False),
+                StructField("Datatier", StringType(), False),
+                StructField("JobType", StringType(), False),
+            ])
             tsprint("Saving day information...")
             outfile = fout + '/access_' + date
             if fmt == 'csv':
                 fjoin.write.format("csv")\
+                    .schema(schema)\
                     .option("header", "true").mode("overwrite").save(outfile)
             elif fmt == 'parquet':
                 fjoin.write.format("parquet")\
+                    .schema(schema)\
                     .option("codec", "snappy").mode("overwrite").save(outfile)
     tsprint("Job finished!")
 
