@@ -13,10 +13,14 @@ fi
 
 # find out where CMSSpark is installed on a system
 droot=`python -c "import CMSSpark; print '/'.join(CMSSpark.__file__.split('/')[:-1])"`
-cmsspark=$droot/$1
+if [ -f $1 ]; then
+    cmsspark=$1
+else
+    cmsspark=$droot/$1
+fi
 
 # enable simple secret to run in non-yarn mode
-conf="--conf spark.authenticate.secret=cmsspark --conf spark.yarn.security.tokens.hive.enabled=false --conf spark.driver.port=5001 --conf spark.blockManager.port=5101 --conf spark.ui.port=5201"
+conf="--conf spark.authenticate.secret=cmsspark --conf spark.security.credentials.hive.enabled=false --conf spark.driver.port=5001 --conf spark.blockManager.port=5101 --conf spark.ui.port=5201"
 
 # look if we requested to show full log output, to disable spark output
 # client should setup his/her own log4j.properties via WMA_LOG4J environment variable
@@ -31,9 +35,9 @@ fi
 # the SPARK_OPTIONS file should provide <option=value> line for every option
 # spark.network.timeout=120s
 # spark.rpc.numRetries=3
-if [ -n "$SPARK_OPTIONS" ]; then
-    conf="$conf `cat $SPARK_OPTIONS | awk '{ORS=" "; print "--conf "$0""}'`"
-fi
+#if [ -n "$SPARK_OPTIONS" ]; then
+#    conf="$conf `cat $SPARK_OPTIONS | awk '{ORS=" "; print "--conf "$0"}'`"
+#fi
 
 # from https://cern.service-now.com/service-portal/view-request.do?n=RQF0876659
 # we can specify in jar files as following (before Spark 2.0):
@@ -81,10 +85,10 @@ yarn=`echo $args | grep -- "--yarn"`
 cvmfs=""
 ctest=`echo $args | grep -- "--cvmfs"`
 if [ -n "`hostname -s | grep ^lxplus`" ] || [ -n "$ctest" ]; then
-    if [ -f /cvmfs/sft.cern.ch/lcg/views/LCG_93/x86_64-centos7-gcc62-opt/setup.sh ] && \
+    if [ -f /cvmfs/sft.cern.ch/lcg/views/LCG_95/x86_64-centos7-gcc7-opt/setup.sh ] && \
        [ -f /cvmfs/sft.cern.ch/lcg/etc/hadoop-confext/hadoop-setconf.sh ]; then
         echo "Enable CVMFS ..."
-        source /cvmfs/sft.cern.ch/lcg/views/LCG_93/x86_64-centos7-gcc62-opt/setup.sh
+        source /cvmfs/sft.cern.ch/lcg/views/LCG_95/x86_64-centos7-gcc7-opt/setup.sh
         source /cvmfs/sft.cern.ch/lcg/etc/hadoop-confext/hadoop-setconf.sh analytix
         cvmfs="true"
     fi
@@ -109,15 +113,17 @@ if [ -n "$yarn" ]; then
     # Temp solution to have a wrapper for python27 on spark cluster
     # once CERN IT will resolve python version we can remove PYSPARK_PYTHON
     echo "YARN execution: $conf"
+    echo "conf=$conf cmsspark=$cmsspark args=$args cvmfs=$cvmfs jars=$jars"
     if [ "$cvmfs" == "true" ]; then
         spark-submit $jars \
             --master yarn \
-            --executor-memory 7g \
+            --executor-memory 12g \
             --executor-cores 2 \
-            --driver-memory 7g \
+            --driver-memory 12g \
             --driver-cores 4 \
+            --deploy-mode cluster \
             --conf spark.sql.autoBroadcastJoinThreshold=100000000 \
-            --conf spark.pyspark.python=/cvmfs/sft.cern.ch/lcg/views/LCG_93/x86_64-centos7-gcc62-opt/bin/python \
+            --conf spark.pyspark.python=/cvmfs/sft.cern.ch/lcg/views/LCG_95/x86_64-centos7-gcc7-opt/bin/python \
             --conf spark.driver.extraClassPath=$mapreduce \
             --conf spark.executorEnv.LD_LIBRARY_PATH=$LD_LIBRARY_PATH \
             $conf $cmsspark $args
@@ -136,11 +142,12 @@ else
     # Modify with local[*] to use all the available cores in the node
     #   optionally increase driver memory with --driver-memory 2G (default 1G)
     echo "LOCAL (NO-YARN) execution"
+    echo "conf=$conf cmsspark=$cmsspark args=$args cvmfs=$cvmfs"
     if [ "$cvmfs" == "true" ]; then
         spark-submit $jars \
             --executor-memory $((`nproc`/4))G \
             --master local[$((`nproc`/4))] \
-            --conf spark.pyspark.python=/cvmfs/sft.cern.ch/lcg/views/LCG_93/x86_64-centos7-gcc62-opt/bin/python \
+            --conf spark.pyspark.python=/cvmfs/sft.cern.ch/lcg/views/LCG_95/x86_64-centos7-gcc7-opt/bin/python \
             --conf spark.driver.extraClassPath=$mapreduce \
             --conf spark.executorEnv.LD_LIBRARY_PATH=$LD_LIBRARY_PATH \
             $conf $cmsspark $args

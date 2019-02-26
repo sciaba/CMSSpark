@@ -24,6 +24,7 @@ import time
 import datetime
 import calendar
 
+import numpy as np
 import pandas as pd
 
 from pyspark.sql.window import Window
@@ -123,7 +124,7 @@ def run(site, date, cache_size, fout, yarn=None, verbose=None):
 
 
     tsprint("Cache limit: %d" % cache_limit)
-    tsprint("Clean vache limit: %d" % clean_cache_limit)
+    tsprint("Clean cache limit: %d" % clean_cache_limit)
 
 
     date_name = date
@@ -166,7 +167,8 @@ def run(site, date, cache_size, fout, yarn=None, verbose=None):
         tsprint("Collecting information of files accessed...")
 
         new_files_df = fjoin.groupBy("Filename")\
-            .agg(avg("DBS_Filesize").alias("size"), count("AccessTime").alias("nacc"), max("AccessTime").alias("atime"))
+            .agg(avg("DBS_Filesize").alias("size"), count("AccessTime")\
+            .alias("nacc"), max("AccessTime").alias("atime"))
         new_files_df.cache()
         new_files_df.createOrReplaceTempView("new_files_df")
 
