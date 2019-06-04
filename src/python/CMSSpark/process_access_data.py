@@ -23,6 +23,7 @@ import re
 import time
 import datetime
 import calendar
+import logging
 
 import numpy as np
 import pandas as pd
@@ -118,16 +119,22 @@ def jm_dates(dateinput):
 
 def run(site, date, cache_size, fout, yarn=None, verbose=None):
 
+    date_name = date
+
+    logger = logging.getLogger('process_access_data')
+    logger.setLevel(logging.INFO)
+    logfile = 'logfile_' + site + '_' + cache_size + '_' + date_name + '.txt'
+    fh = logging.FileHandler(logfile)
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%H:%M:%S')
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+
     cache_limit = int(cache_size) * 1024.   # in GB
     clean_cache_limit = cache_limit * 0.8   # in GB
     gc_type = 'atime'
 
-
-    tsprint("Cache limit: %d" % cache_limit)
-    tsprint("Clean cache limit: %d" % clean_cache_limit)
-
-
-    date_name = date
+    logger.info("Cache limit: %d" % cache_limit)
+    logger.info("Clean cache limit: %d" % clean_cache_limit)
 
     fmt = 'csv'
 
@@ -154,25 +161,26 @@ def run(site, date, cache_size, fout, yarn=None, verbose=None):
 
     i = 0
     for date in dates:
-        tsprint("Day %s"% date)
+        logger.info("Day %s"% date)
         i += 1
 
         # Read file access data for the day
-        tsprint("Reading file access information...")
+        logger.info("Reading file access information...")
         infile = fout + '/access_' + date
         fjoin = spark.read.format(fmt).option("header", "false")\
                                       .schema(schema)\
                                       .load(infile)
 
-        tsprint("Collecting information of files accessed...")
+        logger.info("Collecting information of files accessed...")
 
         new_files_df = fjoin.groupBy("Filename")\
-            .agg(avg("DBS_Filesize").alias("size"), count("AccessTime")\
-            .alias("nacc"), max("AccessTime").alias("atime"))
+            .agg(avg("DBS_Filesize").alias("size"),
+            count("AccessTime").alias("nacc"),
+            max("AccessTime").alias("atime"))
         new_files_df.cache()
         new_files_df.createOrReplaceTempView("new_files_df")
 
-        tsprint("Updating the cache...")
+        logger.info("Updating the cache...")
         if i == 1:
             totals = new_files_df.selectExpr("sum(nacc-1)", "count(1)").head()
             if totals[1] == 0:
@@ -181,10 +189,11 @@ def run(site, date, cache_size, fout, yarn=None, verbose=None):
             else:
                 nhits = totals[0]
                 nmisses = totals[1]
-            tsprint("Hits and misses calculated")
+            logger.info("Hits and misses calculated")
             cache_df = new_files_df
+            cache_df.cache()
             cache_df.createOrReplaceTempView("cache_df")
-            tsprint("Cache created")
+            logger.info("Cache created")
         else:
             # Find number of cache hits and misses
             joinExpr = new_files_df.Filename == cache_df.Filename
@@ -200,7 +209,7 @@ def run(site, date, cache_size, fout, yarn=None, verbose=None):
                 if nhits is None: nhits = 0
                 nhits += totals[0]
                 nmisses = totals[1]
-            tsprint("Hits and misses calculated")
+            logger.info("Hits and misses calculated")
 
             # Now, update the cache information
 
@@ -208,7 +217,7 @@ def run(site, date, cache_size, fout, yarn=None, verbose=None):
             cache_df = spark.sql(joinExpr)
             cache_df.cache()
             cache_df.createOrReplaceTempView("cache_df")
-            tsprint("Cache updated")
+            logger.info("Cache updated")
 
         totals = cache_df.selectExpr("sum(size)", "count(1)").head()
         if totals[1] == 0:
@@ -217,15 +226,15 @@ def run(site, date, cache_size, fout, yarn=None, verbose=None):
         else:
             nfc = totals[1]
             cache_used = totals[0] / 1024.**3
-        tsprint("No. of hits: %d" % nhits)
-        tsprint("No. of nmisses: %d" % nmisses)
-        tsprint("No. of files in cache: %d" % nfc)
-        tsprint("Cache used: %f TB" % (cache_used / 1024.))
+        logger.info("No. of hits: %d" % nhits)
+        logger.info("No. of nmisses: %d" % nmisses)
+        logger.info("No. of files in cache: %d" % nfc)
+        logger.info("Cache used: %f TB" % (cache_used / 1024.))
 
         results = results.append({'day': i, 'hits': nhits, 'misses': nmisses, 'nfc': nfc, 'cache_used': cache_used}, ignore_index=True)
 
         if cache_used > cache_limit:
-            tsprint("Garbage collection!")
+            logger.info("Garbage collection!")
             wSpec = Window.orderBy(desc("atime"))\
                 .rowsBetween(Window.unboundedPreceding, Window.currentRow)
             cumsize = sum(col("size")).over(wSpec)
@@ -237,15 +246,15 @@ def run(site, date, cache_size, fout, yarn=None, verbose=None):
             totals = cache_df.selectExpr("sum(size)", "count(1)").head()
             nfc = totals[1]
             cache_used = totals[0] / 1024.**3
-            tsprint("No. of hits: %d" % nhits)
-            tsprint("No. of nmisses: %d" % nmisses)
-            tsprint("No. of files in cache: %d" % nfc)
-            tsprint("Cache used: %f TB" % (cache_used / 1024.))
+            logger.info("No. of hits: %d" % nhits)
+            logger.info("No. of nmisses: %d" % nmisses)
+            logger.info("No. of files in cache: %d" % nfc)
+            logger.info("Cache used: %f TB" % (cache_used / 1024.))
             results = results.append({'day': i, 'hits': nhits, 'misses': nmisses, 'nfc': nfc, 'cache_used': cache_used}, ignore_index=True)
 
 
     # Writing out the processed data
-    tsprint("Writing out the results...")
+    logger.info("Writing out the results...")
 
     cachefile = fout + '/cache_' + site + '_' + cache_size + '_' + date_name
 
@@ -253,7 +262,7 @@ def run(site, date, cache_size, fout, yarn=None, verbose=None):
 
     outfile = 'results_' + site + '_' + cache_size + '_' + date_name + '.csv'
     results.to_csv(outfile)
-    tsprint("Job finished!")
+    logger.info("Job finished!")
 
 
 def main():

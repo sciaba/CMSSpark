@@ -173,7 +173,7 @@ def run(site, date, fout, yarn=None, verbose=None):
 
         fmt = 'csv'
         if fout:
-            schema = StructType([
+            w_schema = StructType([
                 StructField("Filename", StringType(), False),
                 StructField("Filesize", LongType(), False),
                 StructField("SiteName", StringType(), False),
@@ -186,12 +186,14 @@ def run(site, date, fout, yarn=None, verbose=None):
             tsprint("Saving day information...")
             outfile = fout + '/access_' + date
             if fmt == 'csv':
-                fjoin.write.format("csv")\
-                    .schema(schema)\
-                    .option("header", "true").mode("overwrite").save(outfile)
+                fjoin.write\
+		.option("schema", w_schema)\
+		.format("csv")\
+                .option("header", "true").mode("overwrite").save(outfile)
             elif fmt == 'parquet':
-                fjoin.write.format("parquet")\
-                    .schema(schema)\
+                fjoin.write\
+                    .option("schema", w_schema)\
+		    .format("parquet")\
                     .option("codec", "snappy").mode("overwrite").save(outfile)
     tsprint("Job finished!")
 
